@@ -41,23 +41,53 @@ function randdiscrete(p)
     Xi = sum([ones(1, N); cumpinf[1:k-1, :] .<= unifdraws], dims = 1)
 end
 
+
+# q(x) = rand(Normal(x, 10), 1)[1]
+# p(x) = 0.3*exp(-0.2*x^2) + 0.7*exp(-0.2*(x-10)^2)[1]
+function mcmc(N)
+    x = zeros(N+1)
+    for i = 2:(N+1)
+        x_lag = x[i-1]
+        x_new = q(x_lag)
+        accep_pr = min(1.0, p(x_new)/p(x_lag))
+        u = rand(Uniform(), 1)[1]
+        if u <= accep_pr
+            x[i] = x_new
+        else
+            x[i] = x_lag
+        end
+    end
+    return x[2:(N+1)]
+end
+
 # simulate data (X_t, a_t)
-function simulatedata(Udiff, Π, T, N)
+function simulatedata(Udiff, Π, T, N, misspecified::Bool = false)
     k = size(Π, 1)
     one_minus_pi = Matrix(1.0I, k, k) - Π'
     pinf = [one_minus_pi[1:k-1, :]; ones(1, k)]\[zeros(k-1, 1); 1.0]
     pinf = pinf * ones(1, N)
-
     Xi = randdiscrete(pinf)
-    ϵdiff = rand(Gumbel(), N) - rand(Gumbel(), N)
-    choices = Udiff[Array{Int64,2}(Xi), 1] .> ϵdiff'
 
-    for t = 2:T
-        Xi = [Xi; randdiscrete(Π[Array{Int64,1}(Xi[end,:]), :]')]
+    if misspecified == false
         ϵdiff = rand(Gumbel(), N) - rand(Gumbel(), N)
-        choices = [choices; (Udiff[Array{Int64,1}(Xi[end,:]).+ k*choices[end,:]])' .> ϵdiff']
+        choices = Udiff[Array{Int64,2}(Xi), 1] .> ϵdiff'
+        for t = 2:T
+            Xi = [Xi; randdiscrete(Π[Array{Int64,1}(Xi[end,:]), :]')]
+            ϵdiff = rand(Gumbel(), N) - rand(Gumbel(), N)
+            choices = [choices; (Udiff[Array{Int64,1}(Xi[end,:]).+ k*choices[end,:]])' .> ϵdiff']
+        end
+        return (choices, Xi)
+    elseif misspecified == true
+        ϵdiff = mcmc(N) - mcmc(N)
+        choices = Udiff[Array{Int64,2}(Xi), 1] .> ϵdiff'
+        for t = 2:T
+            Xi = [Xi; randdiscrete(Π[Array{Int64,1}(Xi[end,:]), :]')]
+            ϵdiff = mcmc(N) - mcmc(N)
+            choices = [choices; (Udiff[Array{Int64,1}(Xi[end,:]).+ k*choices[end,:]])' .> ϵdiff']
+        end
+        return (choices, Xi)
     end
-    return (choices, Xi)
+
 end
 
 # Estimate the state transition matrix from data
