@@ -42,8 +42,6 @@ function randdiscrete(p)
 end
 
 
-# q(x) = rand(Normal(x, 10), 1)[1]
-# p(x) = 0.3*exp(-0.2*x^2) + 0.7*exp(-0.2*(x-10)^2)[1]
 function mcmc(N)
     x = zeros(N+1)
     for i = 2:(N+1)
@@ -61,14 +59,14 @@ function mcmc(N)
 end
 
 # simulate data (X_t, a_t)
-function simulatedata(Udiff, Π, T, N, misspecified::Bool = false)
+function simulatedata(Udiff, Π, T, N, ϵdist = "ev")
     k = size(Π, 1)
     one_minus_pi = Matrix(1.0I, k, k) - Π'
     pinf = [one_minus_pi[1:k-1, :]; ones(1, k)]\[zeros(k-1, 1); 1.0]
     pinf = pinf * ones(1, N)
     Xi = randdiscrete(pinf)
 
-    if misspecified == false
+    if ϵdist == "ev"
         ϵdiff = rand(Gumbel(), N) - rand(Gumbel(), N)
         choices = Udiff[Array{Int64,2}(Xi), 1] .> ϵdiff'
         for t = 2:T
@@ -77,7 +75,16 @@ function simulatedata(Udiff, Π, T, N, misspecified::Bool = false)
             choices = [choices; (Udiff[Array{Int64,1}(Xi[end,:]).+ k*choices[end,:]])' .> ϵdiff']
         end
         return (choices, Xi)
-    elseif misspecified == true
+    elseif ϵdist == "normal"
+        ϵdiff = rand(Normal(), N) - rand(Normal(), N)
+        choices = Udiff[Array{Int64,2}(Xi), 1] .> ϵdiff'
+        for t = 2:T
+            Xi = [Xi; randdiscrete(Π[Array{Int64,1}(Xi[end,:]), :]')]
+            ϵdiff = rand(Normal(), N) - rand(Normal(), N)
+            choices = [choices; (Udiff[Array{Int64,1}(Xi[end,:]).+ k*choices[end,:]])' .> ϵdiff']
+        end
+        return (choices, Xi)
+    elseif ϵdist == "bimodal"
         ϵdiff = mcmc(N) - mcmc(N)
         choices = Udiff[Array{Int64,2}(Xi), 1] .> ϵdiff'
         for t = 2:T
